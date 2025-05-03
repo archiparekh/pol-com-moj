@@ -1,0 +1,183 @@
+---
+title: "Political Communication on Moj: Topic Modeling"
+output: html_notebook
+---
+
+```{r}
+dataset <- read.csv("../../../data/files/tm_dataset.csv")
+summary(dataset)
+```
+
+```{r}
+library('stm')
+library('lda')
+library('slam')
+```
+
+```{r}
+install.p
+```
+
+```{r}
+library('dplyr')
+```
+
+```{r}
+dataset.meta <- dataset %>% select("party", "party_cat", "pol_cat", "audio_lang", "i")
+```
+
+```{r}
+custom.stop.words <- c("mein", "agar", "ji", "apne")
+```
+
+```{r}
+dataset.proc <- textProcessor(documents=dataset$audio_text,
+                                meta = dataset.meta,
+                                 lowercase = TRUE, #*
+                                 removestopwords = TRUE, #*
+                                 removenumbers = TRUE, #*
+                                 removepunctuation = TRUE, #*
+                                 stem = TRUE, #*
+                                 wordLengths = c(3,Inf), #*
+                                 sparselevel = 1, #*
+                                 language = "en", #*
+                                 verbose = TRUE, #*
+                                 striphtml = FALSE, #*
+                                 customstopwords = custom.stop.words)
+```
+
+```{r}
+dataset.out <- prepDocuments(dataset.proc$documents, dataset.proc$vocab, dataset.proc$meta, lower.thresh=10)
+```
+
+```{r}
+# Function to reconstruct the document text
+reconstruct_documents <- function(doc_tokens, vocab) {
+  words <- vocab[doc_tokens]
+  return(paste(words, collapse = " "))
+}
+
+# Reconstruct all documents
+reconstructed_documents <- sapply(dataset.out$documents, reconstruct_documents, vocab = dataset.out$vocab)
+```
+
+```{r}
+set.seed(2024)
+library("parallel")
+
+search.k.results <- searchK(dataset.out$documents, dataset.out$vocab, K=c(5:20), data=dataset.out$meta, proportion=0.1)
+```
+
+```{r}
+plot(search.k.results)
+```
+
+```{r}
+K=14
+dataset.fit.nometa <- stm(documents = dataset.out$documents, 
+                     vocab = dataset.out$vocab,
+                     K = 14,
+                     prevalence =~ party_cat,
+                     max.em.its = 75,
+                     data = dataset.out$meta,
+                     init.type = "Spectral",
+                     verbose=FALSE)
+```
+
+```{r}
+labelTopics(dataset.fit.nometa)
+```
+
+```{r}
+plot(dataset.fit.nometa)
+```
+
+```{r}
+# Written by ChatGPT
+# Assuming 'stm_model' is your stm model object
+# and 'theta' is the topic-document proportion matrix
+
+# Get the theta matrix (topic proportions for each document)
+theta_matrix <- dataset.fit.nometa$theta
+
+# Function to get the top N documents per topic
+get_top_documents_per_topic <- function(theta_matrix, N = 20) {
+  top_documents <- list()  # List to store top documents per topic
+  
+  # Loop through each topic to find the top N documents
+  for (topic in 1:ncol(theta_matrix)) {
+    # Get the topic proportions for the current topic
+    topic_proportions <- theta_matrix[, topic]
+    
+    # Find the indices of the top N documents for the current topic
+    top_doc_indices <- order(topic_proportions, decreasing = TRUE)[1:N]
+    
+    top_doc_texts <- dataset.out$meta[top_doc_indices,]$i
+    
+    # Store the top N documents for the current topic
+    top_documents[[paste("Topic", topic)]] <- top_doc_texts
+  }
+  
+  return(top_documents)
+}
+
+# Get the top 20 documents for each topic
+top_20_documents <- get_top_documents_per_topic(theta_matrix, N = 20)
+
+# Print the top 20 documents for each topic
+for (topic in names(top_20_documents)) {
+  cat("Top 20 Documents for", topic, ":\n")
+  print(top_20_documents[[topic]])
+  cat("\n\n")
+}
+
+```
+
+```{r}
+
+```
+
+```{r}
+top_document_index <- top_20_documents[[1]]
+topic_docs <- dataset %>% filter (i %in% top_document_index) %>% select(audio_text)
+#topic_docs <- dataset[(dataset$i == "3184196444"),]$audio_text
+print(topic_docs)
+```
+
+```{r}
+all.topic.docs <- dataset %>% filter (i %in% top_20_documents[[1]]) %>% select(i,audio_text)
+for (topic_num in c(2:14)){
+  top_document_index <- top_20_documents[[topic_num]]
+  temp.docs <- dataset %>% filter (i %in% top_document_index) %>% select(i,audio_text)
+  all.topic.docs <- rbind(all.topic.docs, temp.docs)
+}
+```
+
+```{r}
+all.topic.docs$topic <- rep(1:K,each=20)
+```
+
+```{r}
+temp = 1
+temp=temp+1
+```
+
+```{r}
+save(dataset.fit.nometa, file = "audio_text_model_12-29.RData")
+```
+
+```{r}
+dataset.fit.content <- stm(documents = dataset.out$documents, 
+                     vocab = dataset.out$vocab,
+                     K = 14,
+                     prevalence =~ party_cat,
+                     content =~ party_cat,
+                     max.em.its = 75,
+                     data = dataset.out$meta,
+                     init.type = "Spectral",
+                     verbose=FALSE)
+```
+
+```{r}
+labelTopics(dataset.fit.content)
+```

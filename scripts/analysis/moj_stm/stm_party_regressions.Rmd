@@ -1,0 +1,212 @@
+---
+title: "stm_party_regressions"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+
+```{r}
+library('stm')
+library('lda')
+library('slam')
+library('dplyr')
+set.seed(2024)
+```
+
+```{r}
+dataset <- read.csv("../../../data/files/tm_dataset.csv")
+dataset.meta <- dataset %>% select("party", "party_cat", "pol_cat", "audio_lang", "has_ocr", "i")
+dataset$audio_ocr_text <- paste(dataset$audio_text, dataset$ocr_text, sep=" ")
+```
+
+```{r}
+dataset$party_cat_bjp <- with(dataset, ifelse(party_cat =="BJP", "BJP", "Other"))
+dataset$party_cat_congress <- with(dataset, ifelse(party_cat =="Congress", "Congress", "Other"))
+dataset$party_cat_aap <- with(dataset, ifelse(party_cat =="AAP", "AAP", "Other"))
+dataset$party_cat_aimim <- with(dataset, ifelse(party_cat =="AIMIM", "AIMIM", "Other"))
+dataset$party_cat_samajwadi <- with(dataset, ifelse(party_cat =="Samajwadi", "Samajwadi", "Other"))
+
+```
+
+```{r}
+fieldname <- "audio_ocr_text"
+f.dataset <- dataset$audio_ocr_text
+f.dataset.meta <- dataset %>% select("party", "party_cat", "pol_cat", "audio_lang", "i", "has_ocr", "party_cat_bjp", "party_cat_congress", "party_cat_samajwadi", "party_cat_aap", "party_cat_aimim")
+custom.stop.words <- c("mein", "agar", "ji", "apne")
+K=14
+```
+
+
+```{r}
+f.dataset.proc <- textProcessor(documents=f.dataset,
+                                meta = f.dataset.meta,
+                                 lowercase = TRUE,
+                                 removestopwords = TRUE,
+                                 removenumbers = TRUE,
+                                 removepunctuation = TRUE,
+                                 stem = TRUE,
+                                 sparselevel = 1,
+                                 language = "en",
+                                 verbose = TRUE,
+                                 customstopwords = custom.stop.words)
+f.dataset.out <- prepDocuments(f.dataset.proc$documents, f.dataset.proc$vocab, f.dataset.proc$meta, lower.thresh=10)
+```
+
+```{r}
+get_top_documents_per_topic <- function(theta_matrix, metadata, N = 20) {
+  top_documents <- list()  # List to store top documents per topic
+  
+  # Loop through each topic to find the top N documents
+  for (topic in 1:ncol(theta_matrix)) {
+    # Get the topic proportions for the current topic
+    topic_proportions <- theta_matrix[, topic]
+    
+    # Find the indices of the top N documents for the current topic
+    top_doc_indices <- order(topic_proportions, decreasing = TRUE)[1:N]
+    
+    top_doc_texts <- metadata[top_doc_indices,]$i
+    
+    # Store the top N documents for the current topic
+    top_documents[[paste("Topic", topic)]] <- top_doc_texts
+  }
+  
+  return(top_documents)
+}
+```
+
+```{r}
+model <- stm(documents = f.dataset.out$documents, 
+                     vocab = f.dataset.out$vocab,
+                     K = K,
+                     prevalence =~ pol_cat,
+                     content =~ party_cat,
+                     max.em.its = 75,
+                     data = f.dataset.out$meta,
+                     init.type = "Spectral",
+                     verbose=FALSE)
+```
+
+```{r}
+labelTopics(model)
+```
+
+```{r}
+plot.STM(model, type = "summary", main = "title")
+proportions_table <- make.dt(model)  
+summarize_all(proportions_table, mean)
+summarize_all(proportions_table, sum)
+theta_matrix <- model$theta
+metadata <- f.dataset.out$meta
+```
+
+
+```{r}
+#model.est.effect <- estimateEffect(1:14 ~ party_cat+pol_cat, model, meta = metadata)
+plot(model.est.effect, topics=c(1:14),"pol_cat", model=model, method="difference", 
+     cov.value1='Politicians', cov.value2 = 'Non-Politicians', labeltype='custom',
+    
+     custom.labels=c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"), 
+     xlab = "Non-Politician Posts ...... Politician Posts", 
+     main="Effect of Politician vs Non-Politician Tagged Posts")
+```
+
+
+TESTING PARTY (BJP VS NON-BJP) EFFECTS
+```{r}
+model <- stm(documents = f.dataset.out$documents, 
+                     vocab = f.dataset.out$vocab,
+                     K = K,
+                     prevalence =~ pol_cat,
+                     content =~ party_cat_bjp,
+                     max.em.its = 75,
+                     data = f.dataset.out$meta,
+                     init.type = "Spectral",
+                     verbose=FALSE)
+metadata <- f.dataset.out$meta
+model.est.effect <- estimateEffect(1:14 ~ party_cat_bjp+pol_cat, model, meta = metadata)
+plot(model.est.effect,"party_cat_bjp", model=model, method="difference", 
+     cov.value1='BJP', cov.value2 = 'Other', labeltype='custom',
+     custom.labels=c(1:14), 
+      
+     xlab = "Other Party Posts ...... BJP Posts", 
+     main="Effect of BJP vs non-BJP Tagged Posts")
+
+```
+For Congress:
+
+```{r}
+model <- stm(documents = f.dataset.out$documents, 
+                     vocab = f.dataset.out$vocab,
+                     K = K,
+                     prevalence =~ pol_cat,
+                     content =~ party_cat_congress,
+                     max.em.its = 75,
+                     data = f.dataset.out$meta, 
+                     init.type = "Spectral",
+                     verbose=FALSE)
+metadata <- f.dataset.out$meta
+model.est.effect <- estimateEffect(1:14 ~ party_cat_congress+pol_cat, model, meta = metadata)
+plot(model.est.effect,"party_cat_congress", model=model, method="difference", 
+     cov.value1='Congress', cov.value2 = 'Other', labeltype='custom',
+     custom.labels=c(1:14),
+     xlab = "Other Party Posts ...... Congress Posts", 
+     main="Effect of Congress vs non-Congress Tagged Posts")
+```
+```{r}
+model <- stm(documents = f.dataset.out$documents, 
+                     vocab = f.dataset.out$vocab,
+                     K = K,
+                     prevalence =~ pol_cat,
+                     content =~ party_cat_samajwadi,
+                     max.em.its = 75,
+                     data = f.dataset.out$meta,
+                     init.type = "Spectral",
+                     verbose=FALSE)
+metadata <- f.dataset.out$meta
+model.est.effect <- estimateEffect(1:14 ~ party_cat_samajwadi+pol_cat, model, meta = metadata)
+plot(model.est.effect,"party_cat_samajwadi", model=model, method="difference", 
+     cov.value1='Samajwadi', cov.value2 = 'Other', labeltype='custom',
+     custom.labels=c(1:14),
+     xlab = "Other Party Posts ...... Samajwadi Posts", 
+     main="Effect of Samajwadi vs non-Samajwadi Tagged Posts")
+```
+```{r}
+model <- stm(documents = f.dataset.out$documents, 
+                     vocab = f.dataset.out$vocab,
+                     K = K,
+                     prevalence =~ pol_cat,
+                     content =~ party_cat_aap,
+                     max.em.its = 75,
+                     data = f.dataset.out$meta,
+                     init.type = "Spectral",
+                     verbose=FALSE)
+metadata <- f.dataset.out$meta
+model.est.effect <- estimateEffect(1:14 ~ party_cat_aap+pol_cat, model, meta = metadata)
+plot(model.est.effect,"party_cat_aap", model=model, method="difference", 
+     cov.value1='AAP', cov.value2 = 'Other', labeltype='custom',
+     custom.labels=c(1:14),
+     xlab = "Other Party Posts ...... AAP Posts", 
+     main="Effect of AAP vs non-AAP Tagged Posts")
+```
+```{r}
+model <- stm(documents = f.dataset.out$documents, 
+                     vocab = f.dataset.out$vocab,
+                     K = K,
+                     prevalence =~ pol_cat,
+                     content =~ party_cat_aimim,
+                     max.em.its = 75,
+                     data = f.dataset.out$meta,
+                     init.type = "Spectral",
+                     verbose=FALSE)
+metadata <- f.dataset.out$meta
+model.est.effect <- estimateEffect(1:14 ~ party_cat_aimim+pol_cat, model, meta = metadata)
+plot(model.est.effect,"party_cat_aimim", model=model, method="difference", 
+     cov.value1='AIMIM', cov.value2 = 'Other', labeltype='custom',
+     custom.labels=c(1:14),
+     xlab = "Other Party Posts ...... AIMIM Posts", 
+     main="Effect of AIMIM vs non-AIMIM Tagged Posts")
+```
+
