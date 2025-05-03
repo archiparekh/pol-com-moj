@@ -6,4 +6,4 @@
 /output/reverse-engineering/*.apk
 /scripts/analysis/moj_stm/.Rproj.user
 /scripts/analysis/moj_stm/.Rhistory
-/content-analysis-old
+/output/content-analysis-old
